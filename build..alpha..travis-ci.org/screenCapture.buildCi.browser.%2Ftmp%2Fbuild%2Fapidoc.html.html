@@ -1,0 +1,269 @@
+<html><head></head><body><div class="apidocDiv">
+<style>
+/*csslint
+*/
+.apidocDiv {
+    background: #fff;
+    font-family: Arial, Helvetica, sans-serif;
+}
+.apidocDiv a[href] {
+    color: #33f;
+    font-weight: bold;
+    text-decoration: none;
+}
+.apidocDiv a[href]:hover {
+    text-decoration: underline;
+}
+.apidocCodeCommentSpan {
+    background: #bbf;
+    color: #000;
+    display: block;
+}
+.apidocCodeKeywordSpan {
+    color: #d00;
+    font-weight: bold;
+}
+.apidocCodePre {
+    background: #eef;
+    border: 1px solid;
+    color: #777;
+    padding: 5px;
+    white-space: pre-wrap;
+}
+.apidocFooterDiv {
+    margin-top: 20px;
+    text-align: center;
+}
+.apidocModuleLi {
+    margin-top: 10px;
+}
+.apidocSectionDiv {
+    border-top: 1px solid;
+    margin-top: 20px;
+}
+.apidocSignatureSpan {
+    color: #777;
+    font-weight: bold;
+}
+</style>
+<h1>api documentation for
+    <a href="https://github.com/parro-it/folderify">folderify (v1.2.1)</a>
+</h1>
+<h4>Expose the content of each file in a folder as an object property.</h4>
+<div class="apidocSectionDiv"><a href="#apidoc.tableOfContents" id="apidoc.tableOfContents"><h1>table of contents</h1></a><ol>
+
+    <li class="apidocModuleLi"><a href="#apidoc.module.folderify">module folderify</a><ol>
+
+        <li>
+
+            <a class="apidocElementLiA" href="#apidoc.element.folderify.folderify">
+            function <span class="apidocSignatureSpan"></span>folderify
+            <span class="apidocSignatureSpan">(file)</span>
+            </a>
+
+        </li>
+
+        <li>
+
+            <span class="apidocSignatureSpan">object <span class="apidocSignatureSpan">folderify.</span>validExtensions</span>
+
+        </li>
+
+    </ol></li>
+
+</ol></div>
+
+<div class="apidocSectionDiv">
+<h1><a href="#apidoc.module.folderify" id="apidoc.module.folderify">module folderify</a></h1>
+
+
+    <h2>
+        <a href="#apidoc.element.folderify.folderify" id="apidoc.element.folderify.folderify">
+        function <span class="apidocSignatureSpan"></span>folderify
+        <span class="apidocSignatureSpan">(file)</span>
+        </a>
+    </h2>
+    <ul>
+    <li>description and source-code<pre class="apidocCodePre">function folderify(file) {
+  var data;
+  var pending;
+  var ifNames;
+  var tr;
+  var itsDirName;
+  var itsFileName;
+
+  function isIF (node) {
+    var c = node.callee;
+
+    return c &amp;&amp;
+      node.type === 'CallExpression' &amp;&amp;
+      node.arguments &amp;&amp;
+      node.arguments.length &amp;&amp;
+      node.arguments[0].value === 'include-folder' &amp;&amp;
+
+    c.type === 'Identifier' &amp;&amp;
+      c.name === 'require';
+  }
+
+  function isParsableFileName (filename) {
+    return folderify.validExtensions.indexOf(path.extname(filename)) &gt;= 0;
+  }
+
+  function write (buf) {
+    data += buf;
+  }
+
+  function finish (output) {
+    tr.queue(String(output));
+    tr.queue(null);
+  }
+
+  function isVarDecl (node) {
+    return isIF(node) &amp;&amp;
+      node.parent.type === 'VariableDeclarator' &amp;&amp;
+      node.parent.id.type === 'Identifier';
+  }
+
+  function isVarAssign (node) {
+    return isIF(node) &amp;&amp;
+      node.parent.type === 'AssignmentExpression' &amp;&amp;
+      node.parent.left.type === 'Identifier'
+
+    ;
+  }
+
+  function unrequireIF (node) {
+    function unrequire (n) {
+      n.update('undefined');
+    }
+    if (isVarDecl(node)) {
+      ifNames[node.parent.id.name] = true;
+
+      unrequire(node.parent.init);
+    } else if (isVarAssign(node)) {
+      ifNames[node.parent.left.name] = true;
+
+      unrequire(node.parent.right);
+    }
+  }
+
+  function buildOriginalSource (folder, filter, options, stream) {
+    if (!filter) {
+      filter = /^[^.].*$/;
+    }
+
+    if (typeof options !== 'object') {
+      options = {};
+    }
+
+    // Emit file events for each file in this folder.
+    // Used by a file-watcher like watchify.
+    fs.readdirSync(folder)
+      .filter(filter.test.bind(filter))
+      .map(function (file) {
+        stream.emit('file', path.join(folder, file));
+      });
+
+    var fnBody = includeFolder.buildSource(folder, filter, options);
+
+    return '(function(){' +
+      fnBody +
+      '})()';
+  }
+
+  function parse (stream) {
+    if (!isParsableFileName(itsFileName)) {
+      finish(data);
+      return;
+    }
+
+    var output = falafel(data, function (node) {
+      unrequireIF(node);
+
+      if (node.type === 'CallExpression' &amp;&amp; node.callee &amp;&amp; ifNames[node.callee.name] === true) {
+        var folderSourceCode = node.arguments[0].source();
+
+        folderSourceCode = folderSourceCode
+          .replace(/__dirname/g, '"' + itsDirName + '"')
+          .replace(/__filename/g, '"' + itsFileName + '"')
+          .replace(/\\/g, '/');
+
+        var folder = eval(folderSourceCode); // eslint-disable-line no-eval
+
+        var filesFilter;
+
+        if (node.arguments.length &gt; 1) {
+          filesFilter = eval(node.arguments[1].source()); // eslint-disable-line no-eval
+        }
+
+        var options;
+
+        if (node.arguments.length &gt; 2) {
+          options = eval('(' + node.arguments[2].source() + ')'); // eslint-disable-line no-eval
+        }
+
+        var originalSource;
+
+        originalSource = buildOriginalSource(folder, filesFilter, options, stream);
+
+        var brfsStream = brfs(folder + 'bogus.txt');
+
+        var brfsResult = concat({encoding: 'string'}, function (result) {
+          node.update(result);
+          pending--;
+          if (pending === 0) {
+            finish(output);
+          }
+        });
+
+        brfsStream.on('error', function (err) {
+          this.emit('error', err);
+        });
+
+        brfsStream.pipe(brfsResult);
+
+        brfsStream.write(originalSource);
+        brfsStream.end();
+
+        pending++;
+      }
+    });
+
+    if (pending === 0) {
+      finish(output);
+    }
+  }
+
+  function end () {
+    try {
+      parse(this);
+    } catch (err) {
+      this.emit('error', err);
+    }
+  }
+
+  itsDirName = path.dirname(file);
+  itsFileName = file;
+
+  data = '';
+  pending = 0;
+  ifNames = {};
+  tr = through(write, end);
+
+  return tr;
+}</pre></li>
+    <li>example usage<pre class="apidocCodePre">n/a</pre></li>
+    </ul>
+
+
+
+
+</div>
+
+<div class="apidocFooterDiv">
+    [ this document was created with
+    <a href="https://github.com/kaizhu256/node-utility2" target="_blank">utility2</a>
+    ]
+</div>
+</div>
+</body></html>
